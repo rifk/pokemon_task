@@ -4,7 +4,8 @@ REST server to provide pokemon info written in rust.
 
 ## Running
 
-Can start server by running
+To run locally make sure you have rust installed (https://www.rust-lang.org/tools/install)
+Then run
 ```
 cargo run
 ```
@@ -28,7 +29,7 @@ docker run --network host -it pokemon_task:latest
 
 You can then reach the access the api at `localhost:5000`.
 
-## TODO
+## TODOs
 
 Few things that could be better if this was going to a prod deployment:
 
