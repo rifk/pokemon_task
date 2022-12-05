@@ -14,5 +14,7 @@ thiserror = "1.0.37"
 tokio = { version = "1.22.0", features = ["full"] }
 
 [dev-dependencies]
+serde_urlencoded = "0.7.1"
 wiremock = "0.5"
+
 

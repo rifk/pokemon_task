@@ -1,4 +1,4 @@
-use crate::service::PokemonInfoService;
+use crate::service::{DescriptionTranslatorService, PokemonInfoService};
 use eyre::Result;
 use reqwest::ClientBuilder;
 use std::net::SocketAddr;
@@ -13,8 +13,10 @@ async fn main() -> Result<()> {
         // timout value could be configurable or need tuning in prod
         .timeout(Duration::from_secs(10))
         .build()?;
-    let pokemon_info_service = PokemonInfoService::new(client);
-    let routes = api::routes(pokemon_info_service);
+
+    let pokemon_info_service = PokemonInfoService::new(client.clone());
+    let description_translator_service = DescriptionTranslatorService::new(client);
+    let routes = api::routes(pokemon_info_service, description_translator_service);
 
     println!("starting server listening 127.0.0.1:5000");
     let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
