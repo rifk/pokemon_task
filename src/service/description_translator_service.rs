@@ -41,7 +41,7 @@ impl DescriptionTranslatorService {
         Self { client, url }
     }
 
-    /// Translate the decription field using yoda for cave pokemon or shakespeare for others.
+    /// Translate the decription field using yoda for cave or legendary pokemon or shakespeare for others.
     /// If translation fails for any reason then leave the original description.
     pub async fn translate_description(&self, pokemon_info: &mut PokemonInfo) {
         println!("translating description: {:?}", pokemon_info);
@@ -50,7 +50,7 @@ impl DescriptionTranslatorService {
             .post(format!(
                 "{}/{}",
                 self.url,
-                if pokemon_info.habitat.eq_ignore_ascii_case(CAVE) {
+                if pokemon_info.habitat.eq_ignore_ascii_case(CAVE) || pokemon_info.is_legendary {
                     YODA
                 } else {
                     SHAKESPEARE
@@ -102,15 +102,60 @@ mod tests {
 
     #[tokio::test]
     async fn shakespeare_translate() -> Result<()> {
+        perform_translation_test(
+            PokemonInfo {
+                name: "pikachu".to_string(),
+                habitat: "forest".to_string(),
+                description: "pikachu description ...".to_string(),
+                is_legendary: false,
+            },
+            "shakespeare pikachu translation".to_string(),
+            SHAKESPEARE.to_string(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn cave_yoda_translate() -> Result<()> {
+        perform_translation_test(
+            PokemonInfo {
+                name: "zubat".to_string(),
+                habitat: CAVE.to_string(),
+                description: "zubat description".to_string(),
+                is_legendary: false,
+            },
+            "zubat yoda translation".to_string(),
+            YODA.to_string(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn legendary_yoda_translate() -> Result<()> {
+        perform_translation_test(
+            PokemonInfo {
+                name: "mewtwo".to_string(),
+                habitat: "rare".to_string(),
+                description: "mewtwo description".to_string(),
+                is_legendary: true,
+            },
+            "mewtwo yoda translation".to_string(),
+            YODA.to_string(),
+        )
+        .await
+    }
+
+    async fn perform_translation_test(
+        pokemon_info: PokemonInfo,
+        new_description: String,
+        translation_type: String,
+    ) -> Result<()> {
         let mock_server = MockServer::start().await;
         let service =
             DescriptionTranslatorService::new_with_url(reqwest::Client::new(), mock_server.uri());
 
-        let description = "original desc".to_string();
-        let new_description = "shakespear desc".to_string();
-
         let req = TranslateRequest {
-            text: description.clone(),
+            text: pokemon_info.description.clone(),
         };
         let resp = TranslateResponse {
             contents: Contents {
@@ -119,68 +164,50 @@ mod tests {
         };
 
         Mock::given(method("POST"))
-            .and(path(format!("/{}", &SHAKESPEARE)))
+            .and(path(format!("/{}", translation_type)))
             .and(body_string(serde_urlencoded::to_string(req)?))
             .respond_with(ResponseTemplate::new(200).set_body_json(resp))
+            .expect(1)
             .mount(&mock_server)
             .await;
 
-        let pokemon_info = PokemonInfo {
-            name: "mewtwo".to_string(),
-            habitat: "rare".to_string(),
-            description,
-            is_legendary: true,
+        let mut translated = pokemon_info.clone();
+        service.translate_description(&mut translated).await;
+
+        let expected = PokemonInfo {
+            description: new_description,
+            ..pokemon_info
         };
-        let mut pokemon_info_new = pokemon_info.clone();
 
-        service.translate_description(&mut pokemon_info_new).await;
-        assert_eq!(pokemon_info_new.description, new_description);
-        assert_eq!(pokemon_info_new.name, pokemon_info.name);
-        assert_eq!(pokemon_info_new.habitat, pokemon_info.habitat);
-        assert_eq!(pokemon_info_new.is_legendary, pokemon_info.is_legendary);
+        assert_eq!(expected, translated);
 
+        mock_server.verify().await;
         Ok(())
     }
 
     #[tokio::test]
-    async fn yoda_translate() -> Result<()> {
+    /// Error during tranlation leaves descripiton as is
+    async fn failed_translation() -> Result<()> {
         let mock_server = MockServer::start().await;
         let service =
             DescriptionTranslatorService::new_with_url(reqwest::Client::new(), mock_server.uri());
 
-        let description = "original desc".to_string();
-        let new_description = "yoda desc".to_string();
-
-        let req = TranslateRequest {
-            text: description.clone(),
-        };
-        let resp = TranslateResponse {
-            contents: Contents {
-                translated: new_description.clone(),
-            },
-        };
-
         Mock::given(method("POST"))
-            .and(path(format!("/{}", &YODA)))
-            .and(body_string(serde_urlencoded::to_string(req)?))
-            .respond_with(ResponseTemplate::new(200).set_body_json(resp))
+            .respond_with(ResponseTemplate::new(429))
             .mount(&mock_server)
             .await;
 
-        let pokemon_info = PokemonInfo {
-            name: "zubat".to_string(),
-            habitat: CAVE.to_string(),
-            description,
+        let mut pokemon_info = PokemonInfo {
+            name: "pikachu".to_string(),
+            habitat: "forest".to_string(),
+            description: "pikachu description ...".to_string(),
             is_legendary: false,
         };
-        let mut pokemon_info_new = pokemon_info.clone();
 
-        service.translate_description(&mut pokemon_info_new).await;
+        let expected = pokemon_info.clone();
+        service.translate_description(&mut pokemon_info).await;
 
-        assert_eq!(pokemon_info_new.description, new_description);
-        assert_eq!(pokemon_info_new.name, pokemon_info.name);
-        assert_eq!(pokemon_info_new.habitat, pokemon_info.habitat);
-        assert_eq!(pokemon_info_new.is_legendary, pokemon_info.is_legendary);
+        assert_eq!(expected, pokemon_info);
 
         Ok(())
     }
